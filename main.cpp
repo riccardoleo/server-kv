@@ -22,7 +22,5 @@ int main() {
        // WAIT TO RECIVE DATA FROM CLIENT
         server.recv_data();
     }
-
-
     return 0;
 }
