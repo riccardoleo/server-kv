@@ -28,7 +28,7 @@ void Server::create_Server(){
     std::cout << "Server socket creato con successo!" << std::endl;
 }
 
-void Server::set_address(const int porta) const {
+void Server::set_address(int porta) {
 
     std::cout << _server_fd << std::endl;
 
@@ -37,9 +37,9 @@ void Server::set_address(const int porta) const {
     addr.sin_addr.s_addr = INADDR_ANY;
     addr.sin_port = htons(porta);
 
-    if(bind(_server_fd, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) < 0){
-        perror("bind");
-        exit(1);
+    while (bind(_server_fd, reinterpret_cast<struct sockaddr *>(&addr), sizeof(addr)) < 0){
+        porta++;
+        addr.sin_port = htons(porta);
     }
 
     std::cout << "Hai assegnato al server la porta '" << porta << "' con successo!\n" << std::endl;
@@ -53,7 +53,7 @@ void Server::listen_server(const int porta) const {
         exit(1);
     }
 
-    std::cout << "Server pronto su 127.0.0.1:" << porta << std::endl;
+    std::cout << "Server pronto su 127.0.0.1:" << _porta << std::endl;
 
 }
 
@@ -71,184 +71,167 @@ void Server::handShake() {
 
 void Server::recv_data() {
 
-    char tmp[512];
-    ssize_t n;
-    //while ((n = recv(_client_fd, tmp, sizeof(tmp), 0)) > 0) {
-    //    _buf.append(tmp, n);
-    //}
-
     const ssize_t size = recv(_client_fd, _bufChar, sizeof(_bufChar), 0);
-    //std::cout << "BufferString: ";
-    //std::cout << _buf << '\n';
     if (size < 0) {
         std::cout << "non ho ricevuto nullaaaa!";
     }else {
         std::cout << size << '\n';
     }
 
-    //processMessage();
+    processBuffer2();
 
-    int result = processMessageChar();
+    std::cout << "success_msg: " << Server::_success_msg << std::endl;
+    std::cout << "unsuccess_msg: " << Server::_unsuccess_msg << std::endl;
+    std::cout << "success_buffer: " << Server::_success_buffer << std::endl;
+    std::cout << "unsuccess_buffer: " << Server::_unsuccess_buffer << std::endl;
 
-    if(result > 0) {
-        perror("error message");
-    }
 }
 
-void Server::processMessage() {
-    std::string command;
-    std::string sValue;
-    std::string sKey;
+void Server::processBuffer2() {
 
-    std:cout << "Start processMessage" << std::endl;
-    auto start = chrono::high_resolution_clock::now();
+    _response_batch.clear();
+    _response_batch.reserve(250000);
 
     _kvdb.Begin();
-
-    size_t starter, ender;
-
-    size_t pos = 0;
-    while ((starter = _buf.find('$', pos)) != std::string::npos && (ender = _buf.find('\r', starter + 1)) != std::string::npos) {
-
-        std::string frame = _buf.substr(starter + 1, ender - starter - 1);
-        _buf.erase(0, ender + 1);
-        if (const size_t sep = frame.find(':'); sep != std::string::npos) {
-            command = frame.substr(0, sep);
-            if (const size_t sep2 = frame.find(':', sep + 1); sep2 != std::string::npos) {
-                sKey = frame.substr(sep + 1, sep2 - sep - 1);
-                sValue = frame.substr(sep2 + 1);
-            } else {
-                sKey = frame.substr(sep + 1);
-                sValue = "";
-            }
-        } else {
-            continue;
-        }
-        if (command == "SET") {
-            _kvdb.Set(sKey, sValue);
-        } else if (command == "GET") {
-            if (_kvdb.Get(sKey, sValue)) {
-            } else {
-            }
-        } else if (command == "DEL") {
-            _kvdb.Delete(sKey);
-        } else {
-            std::cout << "Comando selezionato non valido: " << command << '\n' << std::endl;
-        }
-
-
-        pos = ender + 1;
-    }
-
-    _kvdb.Commit();
-
-    const auto end = chrono::high_resolution_clock::now();
-    const chrono::duration<double, std::milli> elapsed = end - start;
-    std::cout << "Tempo totale: " << elapsed.count() << " ms" << std::endl;
-}
-
-int Server::processMessageChar() {
-
-    std:cout << "Start processMessageChar" << std::endl;
-    const auto start_time = chrono::high_resolution_clock::now();
-
-
-    const char* start = _bufChar;
-    const char* end = _bufChar + strlen(_bufChar);
-
-
-    _kvdb.Begin();
-
-    int pos = 0;
-    size_t bufLen = strlen(_bufChar);
-    while (pos < bufLen) {
-
-        const char* msgStart = strchr(_bufChar + pos, '$');
-        if (!msgStart) break;
-
-        const char* msgEnd = strchr(msgStart, '\r');
-        if (!msgEnd) {
-            std::cout << " non trovato cr" << '\n';
-            break;
-        }
-
-        size_t msgLen = msgEnd - msgStart;
-
-        if (msgLen > MAX_BUFFER_CHAR_LENGTH) {
-
-            std::cerr << "Messaggio troppo lungo, saltato\n";
-            pos = msgEnd - _bufChar + 3;
-            continue;
-        }
-
-        char message[MAX_MESSAGE_LENGTH + 1] = {0};
-        if (msgLen > 1) {
-            strncpy(message, msgStart + 1, msgLen - 1);
-            message[msgLen - 1] = '\0';
-        }
-
-        _total_messages++;  
-        int result = processSingleMessage(message);
-        if(result == 0) {
-            _total_messages_executed++;
-        } else if(result == 1) {
-            _total_messages_failed++;
-        }
-
-        pos = msgEnd - _bufChar + 1;
-    }
     
+    std::cout << "Start processBuffer2" << std::endl;
+    const auto start_time = std::chrono::high_resolution_clock::now();
+
+    while (*_ptr_buf != '\0') {
+
+        if (_ptr_buf[_$tart] != '$') {
+            _response_batch += "ERROR:";
+            _response_batch += _cmd;
+            _response_batch += "\n";
+            Server::_unsuccess_buffer++;   
+            return;
+        }
+        
+        _ptr_msg = Server::message;
+        
+        while (*_ptr_buf != '\000') {
+
+            do {
+
+                Server::message[_idx] = *_ptr_buf;
+                _idx = (_idx + 1) % MAX_MESSAGE_LENGTH;
+                _ptr_buf++;
+                _count++;
+
+            } while (*_ptr_buf != '\r');
+            Server::message[_idx] = '\r';
+
+            if (Server::message[_$tart] != '$') {
+
+                memset(Server::message, 0, _idx + 1);  
+
+                _ptr_buf++;
+                _count++;
+                _idx = 0;
+                continue;
+
+            }
+
+            _ptr_msg = Server::message;
+
+            *_ptr_msg++;
+
+            while (*_ptr_msg != ':' && *_ptr_msg != '\0') {
+                *_ptr_cmd++ = *_ptr_msg++;
+            }
+            *_ptr_cmd = '\0';
+            if (*_ptr_msg == ':') _ptr_msg++;
+            else {
+                _response_batch += "ERROR:";
+                _response_batch += _cmd;
+                _response_batch += "\n";
+                Server::_unsuccess_msg++;
+                return;
+            } 
+
+            if(strcmp(_cmd, "SET") == 0) {
+
+                while (*_ptr_msg != ':' && *_ptr_msg != '\r' && *_ptr_msg != '\0') {
+                    *_ptr_key++ = *_ptr_msg++;
+                }
+                *_ptr_key = '\0';
+
+                if (*_ptr_msg == ':') _ptr_msg++;
+                else {
+                    _response_batch += "ERROR:";
+                    _response_batch += _cmd;
+                    _response_batch += "\n";
+                    Server::_unsuccess_msg++;
+                    return;
+                } 
+
+                while (*_ptr_msg != '\r' && *_ptr_msg != '\0') {
+                    *_ptr_value++ = *_ptr_msg++;
+                }
+                *_ptr_value = '\0';
+
+                _kvdb.Set(_key, _value);
+                _response_batch += "OK:SET:";
+                _response_batch += _key;
+                _response_batch += "\n";
+
+            }else{
+
+                while (*_ptr_msg != '\r' && *_ptr_msg != '\0') {
+                    *_ptr_key++ = *_ptr_msg++;
+                }
+                *_ptr_key = '\0';
+                
+                if (strcmp(_cmd, "GET") == 0) {
+                    Server::_value_str.clear();
+                    _kvdb.Get(_key, Server::_value_str);
+                    _response_batch += "OK:GET:";
+                    _response_batch += _key;
+                    _response_batch += ":";
+                    _response_batch += Server::_value_str;
+                    _response_batch += "\n";
+                } else {
+                    _kvdb.Delete(_key);
+                    _response_batch += "OK:DEL:";
+                    _response_batch += _key;
+                    _response_batch += "\n";
+                }
+            }
+            
+
+            if(*_ptr_buf == '\000') {
+                break;
+            }
+
+            memset(Server::message, 0, _idx + 1);
+
+            _ptr_buf++;
+            _count++;
+            _idx = 0;
+            Server::_success_msg++;
+
+            _ptr_cmd = _cmd;
+            _ptr_key = _key;
+            _ptr_value = _value;
+            memset(_cmd, 0, sizeof(_cmd));
+            memset(_key, 0, sizeof(_key));
+            memset(_value, 0, sizeof(_value));
+        }
+
+        memset(Server::message, 0, _idx + 1);
+
+        _ptr_buf++;
+        _count++;
+        _idx = 0;
+        Server::_success_buffer++;
+    }
+
+    const auto end_time = std::chrono::high_resolution_clock::now();
+    const std::chrono::duration<double, std::milli> elapsed = end_time - start_time;
+    std::cout << "Tempo totale: " << elapsed.count() << " ms" << std::endl;
 
     _kvdb.Commit();
 
-    std::cout << "Total messages: " << _total_messages << std::endl;
-    std::cout << "Total messages executed: " << _total_messages_executed << std::endl;
-    std::cout << "Total messages failed: " << _total_messages_failed << std::endl;
-
-    const auto end_time = chrono::high_resolution_clock::now();
-    const chrono::duration<double, std::milli> elapsed = end_time - start_time;
-    std::cout << "Tempo totale: " << elapsed.count() << " ms" << std::endl;
-
-    // Azzeramento del buffer
     memset(_bufChar, 0, sizeof(_bufChar));
-
-    return 0;
-}
-
-int Server::processSingleMessage(char singleMessage[MAX_MESSAGE_LENGTH + 1]) {
     
-    size_t len = strlen(singleMessage);
-    if (len > 0 && singleMessage[len - 1] == '\r') {
-        singleMessage[len - 1] = '\0';
-    }
-
-    char* token = strtok(singleMessage, ":");
-    if (!token) {
-        return 1;
-    }
-    char cmd[4] = {0};
-    strncpy(cmd, token, 3);
-
-    char* key = strtok(nullptr, ":");
-    if (!key) {
-        return 1;
-    }
-
-    char* value = strtok(nullptr, ":");
-
-    if (strcmp(cmd, "SET") == 0) {
-        if (!value) {
-            return 1;
-        }
-        _kvdb.Set(key, value);
-    } else if (strcmp(cmd, "GET") == 0) {
-        std::string value2;
-        _kvdb.Get(key, value2);
-    } else if (strcmp(cmd, "DEL") == 0) {
-        _kvdb.Delete(key);
-    } else {
-        return 1;
-    }
-
-    return 0;
 }
