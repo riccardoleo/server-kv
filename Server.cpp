@@ -73,6 +73,15 @@ void Server::handShake_recv_data_processBuffer() {
 
             // RECV DATA
             ssize_t size = recv(_client_fd, _bufChar, sizeof(_bufChar), 0);
+
+            if (size >= MAX_BUFFER_CHAR_LENGTH - 1) {
+                std::cout << "[!] Il client ha inviato un buffer troppo grande (" << size << " bytes), connessione terminata." << std::endl;
+                Server::_unsuccess_buffer++;
+                close(_client_fd);
+                break;
+            }
+
+
             if (size == 0) {
                 std::cout << "Connessione chiusa dal client." << std::endl;
                 break; 
@@ -81,11 +90,13 @@ void Server::handShake_recv_data_processBuffer() {
                 std::cout << "Errore nella ricezione!" << std::endl;
                 break;
             }
+            if(size > MAX_BUFFER_CHAR_LENGTH){
+                std::cout << "Buffer troppo grande" << std::endl;
+                break;
+            }
 
             // PROCESS BUFFER
             if(*_ptr_bufChar != '$'){
-                std::cout << "buffer non valido" << std::endl;
-                _response_batch += "ERROR\n";
                 Server::_unsuccess_buffer++;
                 close(_client_fd);
                 continue;
@@ -127,9 +138,6 @@ void Server::handShake_recv_data_processBuffer() {
                 *_ptr_cmd = '\0';
                 if (*_ptr_message == ':') _ptr_message++;
                 else {
-                    _response_batch += "ERROR:";
-                    _response_batch += _cmd;
-                    _response_batch += "\n";
                     Server::_unsuccess_msg++;
                     Server::_total_messages++;
                     continue;
@@ -145,9 +153,6 @@ void Server::handShake_recv_data_processBuffer() {
 
                     if (*_ptr_message == ':') _ptr_message++;
                     else {
-                        _response_batch += "ERROR:";
-                        _response_batch += _cmd;
-                        _response_batch += "\n";
                         Server::_unsuccess_msg++;
                         Server::_total_messages++;
                         continue;
@@ -202,6 +207,7 @@ void Server::handShake_recv_data_processBuffer() {
                 memset(_value, 0, sizeof(_value));
                 
                 memset(message, 0, MAX_MESSAGE_LENGTH);
+                _response_batch.clear();
                 _ptr_bufChar++;
                 count++;
 
@@ -214,12 +220,16 @@ void Server::handShake_recv_data_processBuffer() {
             std::cout << "Tempo totale: " << elapsed.count() << " ms" << std::endl;
 
             _kvdb.Commit();
+
+            std::cout << "success_msg: " << Server::_success_msg << std::endl;
+            std::cout << "unsuccess_msg: " << Server::_unsuccess_msg << std::endl;
+            std::cout << "success_buffer: " << Server::_success_buffer << std::endl;
+            std::cout << "unsuccess_buffer: " << Server::_unsuccess_buffer << std::endl;
+
+            usleep(3000);
         }
         
-        std::cout << "success_msg: " << Server::_success_msg << std::endl;
-        std::cout << "unsuccess_msg: " << Server::_unsuccess_msg << std::endl;
-        std::cout << "success_buffer: " << Server::_success_buffer << std::endl;
-        std::cout << "unsuccess_buffer: " << Server::_unsuccess_buffer << std::endl;
+        
 
         close(_client_fd); // chiudi la connessione con il client
     }
