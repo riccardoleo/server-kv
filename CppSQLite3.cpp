@@ -1422,9 +1422,7 @@ sqlite3_stmt* CppSQLite3DB::compile(const char* szSQL)
 ** 0x00.  This is accomplished by using an escape character to encode
 ** 0x27 and 0x00 as a two-byte sequence.  The escape character is always
 ** 0x01.  An 0x00 is encoded as the two byte sequence 0x01 0x01.  The
-** 0x27 character is encoded as the two byte sequence 0x01 0x03.  Finally,
-** the escape character itself is encoded as the two-character sequence
-** 0x01 0x02.
+** 0x27 character is encoded as the two byte sequence 0x01 0x03.
 **
 ** To summarize, the encoder works by using an escape sequences as follows:
 **

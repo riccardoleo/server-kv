@@ -3,7 +3,7 @@
 //
 
 #include "Server.h"
-
+#include <unistd.h> 
 #include <chrono>
 
 #include "KVDatabase.h"
@@ -57,181 +57,173 @@ void Server::listen_server(const int porta) const {
 
 }
 
-void Server::handShake() {
+void Server::handShake_recv_data_processBuffer() {
 
-    _client_fd = accept(_server_fd, nullptr, nullptr);
-    if(_client_fd < 0){
-        perror("accept");
-        exit(1);
-    }
+    // HANDSHAKE
+    while (true) {
 
-    std::cout << "Cliente connesso\n" << std::endl;
-
-}
-
-void Server::recv_data() {
-
-    const ssize_t size = recv(_client_fd, _bufChar, sizeof(_bufChar), 0);
-    if (size < 0) {
-        std::cout << "non ho ricevuto nullaaaa!";
-    }else {
-        std::cout << size << '\n';
-    }
-
-    processBuffer2();
-
-    std::cout << "success_msg: " << Server::_success_msg << std::endl;
-    std::cout << "unsuccess_msg: " << Server::_unsuccess_msg << std::endl;
-    std::cout << "success_buffer: " << Server::_success_buffer << std::endl;
-    std::cout << "unsuccess_buffer: " << Server::_unsuccess_buffer << std::endl;
-
-}
-
-void Server::processBuffer2() {
-
-    _response_batch.clear();
-    _response_batch.reserve(250000);
-
-    _kvdb.Begin();
-    
-    std::cout << "Start processBuffer2" << std::endl;
-    const auto start_time = std::chrono::high_resolution_clock::now();
-
-    while (*_ptr_buf != '\0') {
-
-        if (_ptr_buf[_$tart] != '$') {
-            _response_batch += "ERROR:";
-            _response_batch += _cmd;
-            _response_batch += "\n";
-            Server::_unsuccess_buffer++;   
-            return;
+        _client_fd = accept(_server_fd, nullptr, nullptr);
+        if (_client_fd < 0) {
+            perror("accept");
+            continue; 
         }
-        
-        _ptr_msg = Server::message;
-        
-        while (*_ptr_buf != '\000') {
+        std::cout << "Cliente connesso\n" << std::endl;
 
-            do {
+        while (true) {
 
-                Server::message[_idx] = *_ptr_buf;
-                _idx = (_idx + 1) % MAX_MESSAGE_LENGTH;
-                _ptr_buf++;
-                _count++;
+            // RECV DATA
+            ssize_t size = recv(_client_fd, _bufChar, sizeof(_bufChar), 0);
+            if (size == 0) {
+                std::cout << "Connessione chiusa dal client." << std::endl;
+                break; 
+            }
+            if (size < 0) {
+                std::cout << "Errore nella ricezione!" << std::endl;
+                break;
+            }
 
-            } while (*_ptr_buf != '\r');
-            Server::message[_idx] = '\r';
-
-            if (Server::message[_$tart] != '$') {
-
-                memset(Server::message, 0, _idx + 1);  
-
-                _ptr_buf++;
-                _count++;
-                _idx = 0;
+            // PROCESS BUFFER
+            if(*_ptr_bufChar != '$'){
+                std::cout << "buffer non valido" << std::endl;
+                _response_batch += "ERROR\n";
+                Server::_unsuccess_buffer++;
+                close(_client_fd);
                 continue;
-
             }
 
-            _ptr_msg = Server::message;
+            _kvdb.Begin();
+    
+            std::cout << "Start processBuffer" << std::endl;
+            const auto start_time = std::chrono::high_resolution_clock::now();
+            
+            while(count < size){
 
-            *_ptr_msg++;
+                do {
+                
+                    *_ptr_message = *_ptr_bufChar;
+        
+                    _ptr_message++;
+        
+                    _ptr_bufChar++;
+                    count++;
+                    if (_ptr_bufChar >= _bufChar + MAX_BUFFER_CHAR_LENGTH) {
+                       _ptr_bufChar = _bufChar;
+                       count = 0;
+                    }
 
-            while (*_ptr_msg != ':' && *_ptr_msg != '\0') {
-                *_ptr_cmd++ = *_ptr_msg++;
-            }
-            *_ptr_cmd = '\0';
-            if (*_ptr_msg == ':') _ptr_msg++;
-            else {
-                _response_batch += "ERROR:";
-                _response_batch += _cmd;
-                _response_batch += "\n";
-                Server::_unsuccess_msg++;
-                return;
-            } 
+                } while(*_ptr_bufChar != '\r');
 
-            if(strcmp(_cmd, "SET") == 0) {
+                *_ptr_message = '\r';
 
-                while (*_ptr_msg != ':' && *_ptr_msg != '\r' && *_ptr_msg != '\0') {
-                    *_ptr_key++ = *_ptr_msg++;
+
+                _ptr_message = Server::message;
+
+                *_ptr_message++;
+
+                while (*_ptr_message != ':' && *_ptr_message != '\0') {
+                    *_ptr_cmd++ = *_ptr_message++;
                 }
-                *_ptr_key = '\0';
-
-                if (*_ptr_msg == ':') _ptr_msg++;
+            
+                *_ptr_cmd = '\0';
+                if (*_ptr_message == ':') _ptr_message++;
                 else {
                     _response_batch += "ERROR:";
                     _response_batch += _cmd;
                     _response_batch += "\n";
                     Server::_unsuccess_msg++;
-                    return;
+                    Server::_total_messages++;
+                    continue;
                 } 
-
-                while (*_ptr_msg != '\r' && *_ptr_msg != '\0') {
-                    *_ptr_value++ = *_ptr_msg++;
-                }
-                *_ptr_value = '\0';
-
-                _kvdb.Set(_key, _value);
-                _response_batch += "OK:SET:";
-                _response_batch += _key;
-                _response_batch += "\n";
-
-            }else{
-
-                while (*_ptr_msg != '\r' && *_ptr_msg != '\0') {
-                    *_ptr_key++ = *_ptr_msg++;
-                }
-                *_ptr_key = '\0';
-                
-                if (strcmp(_cmd, "GET") == 0) {
-                    Server::_value_str.clear();
-                    _kvdb.Get(_key, Server::_value_str);
-                    _response_batch += "OK:GET:";
-                    _response_batch += _key;
-                    _response_batch += ":";
-                    _response_batch += Server::_value_str;
-                    _response_batch += "\n";
-                } else {
-                    _kvdb.Delete(_key);
-                    _response_batch += "OK:DEL:";
-                    _response_batch += _key;
-                    _response_batch += "\n";
-                }
-            }
             
 
-            if(*_ptr_buf == '\000') {
-                break;
+                if(strcmp(_cmd, "SET") == 0) {
+
+                    while (*_ptr_message != ':' && *_ptr_message != '\r' && *_ptr_message != '\0') {
+                        *_ptr_key++ = *_ptr_message++;
+                    }
+                    *_ptr_key = '\0';
+
+                    if (*_ptr_message == ':') _ptr_message++;
+                    else {
+                        _response_batch += "ERROR:";
+                        _response_batch += _cmd;
+                        _response_batch += "\n";
+                        Server::_unsuccess_msg++;
+                        Server::_total_messages++;
+                        continue;
+                    } 
+                
+
+                    while (*_ptr_message != '\r' && *_ptr_message != '\0') {
+                        *_ptr_value++ = *_ptr_message++;
+                    }
+
+                    *_ptr_value = '\0';
+
+                    _kvdb.Set(_key, _value);
+                    _response_batch += "OK:SET:";
+                    _response_batch += _key;
+                    _response_batch += "\n";
+                
+
+                }else{
+
+                    while (*_ptr_message != '\r' && *_ptr_message != '\0') {
+                        *_ptr_key++ = *_ptr_message++;
+                    }
+                    *_ptr_key = '\0';
+                
+                   if (strcmp(_cmd, "GET") == 0) {
+                        Server::_value_str.clear();
+                        _kvdb.Get(_key, Server::_value_str);
+                        _response_batch += "OK:GET:";
+                        _response_batch += _key;
+                        _response_batch += ":";
+                        _response_batch += Server::_value_str;
+                        _response_batch += "\n";
+                    
+                    } else {
+                        _kvdb.Delete(_key);
+                        _response_batch += "OK:DEL:";
+                        _response_batch += _key;
+                        _response_batch += "\n";
+                    }
+                }
+
+                _ptr_message = message;
+
+                Server::_success_msg++;
+
+                _ptr_cmd = _cmd;
+                _ptr_key = _key;
+                _ptr_value = _value;
+                memset(_cmd, 0, sizeof(_cmd));
+                memset(_key, 0, sizeof(_key));
+                memset(_value, 0, sizeof(_value));
+                
+                memset(message, 0, MAX_MESSAGE_LENGTH);
+                _ptr_bufChar++;
+                count++;
+
             }
+            _ptr_bufChar = _bufChar;
+            count = 0;
 
-            memset(Server::message, 0, _idx + 1);
+            const auto end_time = std::chrono::high_resolution_clock::now();
+            const std::chrono::duration<double, std::milli> elapsed = end_time - start_time;
+            std::cout << "Tempo totale: " << elapsed.count() << " ms" << std::endl;
 
-            _ptr_buf++;
-            _count++;
-            _idx = 0;
-            Server::_success_msg++;
-
-            _ptr_cmd = _cmd;
-            _ptr_key = _key;
-            _ptr_value = _value;
-            memset(_cmd, 0, sizeof(_cmd));
-            memset(_key, 0, sizeof(_key));
-            memset(_value, 0, sizeof(_value));
+            _kvdb.Commit();
         }
+        
+        std::cout << "success_msg: " << Server::_success_msg << std::endl;
+        std::cout << "unsuccess_msg: " << Server::_unsuccess_msg << std::endl;
+        std::cout << "success_buffer: " << Server::_success_buffer << std::endl;
+        std::cout << "unsuccess_buffer: " << Server::_unsuccess_buffer << std::endl;
 
-        memset(Server::message, 0, _idx + 1);
-
-        _ptr_buf++;
-        _count++;
-        _idx = 0;
-        Server::_success_buffer++;
+        close(_client_fd); // chiudi la connessione con il client
     }
 
-    const auto end_time = std::chrono::high_resolution_clock::now();
-    const std::chrono::duration<double, std::milli> elapsed = end_time - start_time;
-    std::cout << "Tempo totale: " << elapsed.count() << " ms" << std::endl;
+    close(_server_fd);
 
-    _kvdb.Commit();
-
-    memset(_bufChar, 0, sizeof(_bufChar));
-    
 }
